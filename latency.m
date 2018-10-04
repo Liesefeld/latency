@@ -672,15 +672,22 @@ end
 end
 
 function samplesOut=nearestN(allTimes,timesIn) %search for nearest neighbor
-    nN(1)=min(abs(allTimes-timesIn(1))); 
-    nN(2)=min(abs(allTimes-timesIn(2)));
-    samplesOut(1)=find(abs(allTimes-timesIn(1))==nN(1));
-    samplesOut(2)=find(abs(allTimes-timesIn(2))==nN(2));
-    sampRate=mean(diff(allTimes));
-    if nN(1) > 1/sampRate || nN(2) > 1/sampRate
-        error('Time points %g and %g not found in time range [%g, %g] or something is wrong about cfg.times',...
-            timesIn(1),timesIn(2),allTimes(1),allTimes(end));
-    end
+% latency and time in same units
+% allTimes   - array of equidistant time values
+% timesIn    - sample index 
+samplesOut = zeros(size(timesIn));
+deltat     = zeros(size(timesIn));
+% delta      = median(diff(allTimes)); % much computation
+delta      = allTimes(2)-allTimes(1);
+% delta      = (allTimes(end)-allTimes(1))/length(allTimes); % also possible
+for i=1:length(timesIn)
+    [deltat(i),samplesOut(i)] = min(abs(allTimes-timesIn(i)));
+end
+if max(deltat) > delta
+    error('Time points %g and %g not found in time range [%g, %g] or something is wrong about cfg.times',...
+        timesIn(1),timesIn(2),allTimes(1),allTimes(end));
+end
+
 end
 
 function peak=peakDetection(cfg,ERP,peakLat)
@@ -829,49 +836,23 @@ end
 end %end of sub-function ampLat
 
 function area=totalArea(cfg,ERP,baseline,time)
-cutERP = ERP(time(1):time(2))-baseline;
-
-if cfg.sign==1
-    area = sum(cutERP(cutERP>0));
-elseif cfg.sign==-1
-    area = sum(cutERP(cutERP<0));
-end
-
+cutERP = (ERP(time(1):time(2))-baseline)*cfg.sign;
+area = sum(cutERP(cutERP>0))*cfg.sign; % area is negative if the component is negative
 end %end of sub-function totalArea
 
 function areaLat=areaLatency(cfg,ERP,area,baseline,time)
-cutERP=ERP(time(1):time(2))-baseline;
-sum_tempERP = 0;
-for sample=1:size(cutERP)
-    if cfg.sign==1
-        %as long as we have not yet reached the quantile area
-        %specified by percArea, go on to add the value at the
-        %current sample to the sum; else break (because
-        %percArea-%-area latency is reached
-        if cutERP(sample) > 0
-            if sum_tempERP < area*cfg.percArea
-                sum_tempERP = sum_tempERP+cutERP(sample);
-            else
-                areaLat.lat = sample+time(1)-1;
-                break;
-            end
-        end
-    elseif cfg.sign==-1
-        if cutERP(sample) < 0
-            if sum_tempERP > area*cfg.percArea
-                sum_tempERP = sum_tempERP+cutERP(sample);
-            else
-                areaLat.lat = sample+time(1)-1;
-                break;
-            end
-        end
-    end
-end
-if exist('areaLat','var')
-    areaLat.foundLat=true;
+cutERP=(ERP(time(1):time(2))-baseline)*cfg.sign; % ERP & area need to be flipped if they are negative
+latidx = find(cumsum(cutERP) >= area * cfg.sign * cfg.percArea);
+if ~isempty(latidx)
+   areaLat.lat = latidx(1) + time(1) -1; % this is just counting samples, what if time was in seconds?
+   areaLat.foundLat=true;
 else
-    areaLat.foundLat=false;
-    areaLat.lat=round(mean(time));
+%  areaLat.lat = NaN;      % or rather removing it from the structure?
+%  if isfield(s,'lat') 
+%     rmfield(s,'lat');
+%  end
+   areaLat.lat = round(mean(time)); % if not latency can be found, than lat is set to the mean?
+   areaLat.foundLat=false;
 end
 end %end of sub-function areaLat
 
