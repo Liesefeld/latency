@@ -1,4 +1,4 @@
-# latency
+# latency.m
 A function to extract various kinds of latency estimates from MEG/EEG data
 The function and its purpose is described in detail in (please cite!):
 Liesefeld, H.R. (2018). Estimating the timing of cognitive operations with MEG/EEG latency measures:
