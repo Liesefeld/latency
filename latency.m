@@ -70,7 +70,7 @@ function [res,cfgNew] = latency(cfg,avgs,sign)
 %   peakAmp:     mean amplitude in the window peakLat+-peakWidth;
 %   peak2peak:   difference in peak amplitude between searched peak and
 %                counter peak
-%   percAmp:     amplitude cfg.percAmp% of the peak amplitude or in between 
+%   baseline:    amplitude cfg.percAmp% of the peak amplitude or in between 
 %                the two peaks if counter peak is used
 %   area:        sum of values above/below the cfg.areaBase
 %   foundLocal:  Boolean that indicates whether a local peak was found;
@@ -94,8 +94,8 @@ function [res,cfgNew] = latency(cfg,avgs,sign)
 %   the respective border defined by cfg.ampLatWin is selected as on- or
 %   offset and res.foundOn or res.foundOff is false, respectively
 %
-% Originally created by Heinrich René Liesefeld in September 2014
-% Last modified by Heinrich René Liesefeld in April 2018
+% Originally created by Heinrich RenÃ© Liesefeld in September 2014
+% Last modified by Heinrich RenÃ© Liesefeld in April 2018
 %
 % Please send bug reports to Heinrich.Liesefeld@psy.lmu.de
 
@@ -238,21 +238,21 @@ for subi=1:nSubs %cycle through subjects
         %calculate threshold relative to peak-to-peak amplitude when
         %counterPeak is used
         if cfg.sign==1
-            comp.percAmp(subi)=peak.amp-(peak.amp-cPeak.amp)*(1-cfg.percAmp);
+            comp.baseline(subi)=peak.amp-(peak.amp-cPeak.amp)*(1-cfg.percAmp);
         elseif cfg.sign==-1
-            comp.percAmp(subi)=peak.amp+(cPeak.amp-peak.amp)*(1-cfg.percAmp);
+            comp.baseline(subi)=peak.amp+(cPeak.amp-peak.amp)*(1-cfg.percAmp);
         end
     else
         %calculate threshold relative to component amplitude when
         %counterPeak is not used
-        comp.percAmp(subi)=peak.amp-peak.amp*(1-cfg.percAmp);
+        comp.baseline(subi)=peak.amp-peak.amp*(1-cfg.percAmp);
     end
 
     if cfg.get.ampLat
         if isfield(comp,'counterLat')
-            ampLat=amplitudeLatency(cfg,ERP,comp.percAmp(subi),peak.lat,cPeak.lat);
+            ampLat=amplitudeLatency(cfg,ERP,comp.baseline(subi),peak.lat,cPeak.lat);
         else
-            ampLat=amplitudeLatency(cfg,ERP,comp.percAmp(subi),peak.lat);
+            ampLat=amplitudeLatency(cfg,ERP,comp.baseline(subi),peak.lat);
         end
         if cfg.warnings
             if ~ampLat.foundOn
@@ -274,7 +274,7 @@ for subi=1:nSubs %cycle through subjects
         %get sum of all values above/below the baseline and areaLat
         switch cfg.areaBase
             case 'percAmp'
-                baseline=comp.percAmp(subi);
+                baseline=comp.baseline(subi);
             case 'zero'
                 baseline=0;
         end
@@ -325,7 +325,7 @@ for subi=1:nSubs %cycle through subjects
         if cfg.get.counterPeak
             plot(comp.counterLat(subi),comp.counterAmp(subi),'ro');
         end
-        plot(xRange,[comp.percAmp(subi) comp.percAmp(subi)]);
+        plot(xRange,[comp.baseline(subi) comp.baseline(subi)]);
         if cfg.get.ampLat
             plot([comp.onset(subi) comp.onset(subi)],yRange);
             plot([comp.offset(subi) comp.offset(subi)],yRange);
@@ -376,7 +376,7 @@ if isfield(cfg,'chanName')
 elseif any(ischar(cfg.chans)) || any(mod(cfg.chans,1))
     error('If cfg.chanName is not set, cfg.chans must contain indices, not channel names.')
 end
-if length(cfg.extract)>1
+if iscell(cfg.extract)
     for outi=1:length(cfg.extract)
         if strcmp(cfg.aggregate,'jackSmulders')
             %oi = n*mean(J) - (n - 1)*ji, see Smulders (2010)
@@ -390,11 +390,11 @@ if length(cfg.extract)>1
 elseif strcmp(cfg.aggregate,'jackSmulders')
     %oi = n*mean(J) - (n - 1)*ji, see Smulders (2010)
     for subi=1:nSubs
-        res(subi)=nSubs*mean(comp.(cfg.extract{1}))-(nSubs-1)*comp.(cfg.extract{1})(subi);
+        res(subi)=nSubs*mean(comp.(cfg.extract))-(nSubs-1)*comp.(cfg.extract)(subi);
     end
     
 else
-    res=comp.(cfg.extract{1});
+    res=comp.(cfg.extract);
 end
 cfgNew = cfg;
 end
@@ -503,11 +503,11 @@ else
     %check whether all timing information is indicated in sampling points
     msg='if cfg.times is not set, all timing information is interpreted as sampling points and must consequently be in integers. Please check: ';
     throwError=false;
-    if mod(cfg.peakWidth,1)
+    if isfield(cfg,'peakWidth') && mod(cfg.peakWidth,1)
         msg=[msg,' peakWdith'];
         throwError=true;
     end
-    if any(mod(cfg.peakWin,1))
+    if isfield(cfg,'peakWin') && any(mod(cfg.peakWin,1))
         msg=[msg,' peakWin'];
         throwError=true;
     end
@@ -532,7 +532,7 @@ else
         peakWidthS=0.005;
         cfg.peakWidth=round(peakWidthS*cfg.sampRate);
         peakWidthS=cfg.peakWidth/cfg.sampRate;
-        warning('No peak width (cfg.peakWidth) indicated; peakWidth set to %gs (%g samples).',peakWidthS,cfg.peakWidth)              
+        warning('No peak width (cfg.peakWidth) indicated; peakWidth set to %g s.',peakWidthS)              
     elseif isfield(cfg,'times') %if sampRate < 50, it is likely in samples/ms
         peakWidthMs=5;
         cfg.peakWidth=round(peakWidthMs*cfg.sampRate);
@@ -549,20 +549,16 @@ if ~isfield(cfg,'times')
     cfg.times=1:size(avgs,3);
     cfg.sampRate=1;
 end
-if isfield(cfg,'extract')
-    if ~iscell(cfg.extract)
-        cfg.extract={cfg.extract};
-    end
-else
-    cfg.extract={'mean','peakAmp','peakLat','area','percAmp','onset','offset','width','areaLat'};
+if ~isfield(cfg,'extract')
+    cfg.extract={'peakLat','onset','offset','areaLat','mean','peakAmp','area','width','peak2peak','baseline'};
     if cfg.warnings
         warning('No output measures chosen; will extract all possible output measures:')
         fprintf('%s, ',cfg.extract{:});
         fprintf('\n');
     end
 end
-if ismember('all',cfg.extract)
-    cfg.extract={'mean','peakAmp','peakLat','area','percAmp','onset','offset','width','areaLat'};
+if strcmp(cfg.extract,'all')
+    cfg.extract={'peakLat','onset','offset','areaLat','mean','peakAmp','area','width','peak2peak','baseline'};
 end
 
 if ~isfield(cfg,'meanTime'),cfg.meanTime=cfg.peakWin;end
@@ -673,21 +669,17 @@ end
 
 function samplesOut=nearestN(allTimes,timesIn) %search for nearest neighbor
 % latency and time in same units
-% allTimes   - array of equidistant time values
-% timesIn    - sample index 
-samplesOut = zeros(size(timesIn));
-deltat     = zeros(size(timesIn));
-% delta      = median(diff(allTimes)); % much computation
-delta      = allTimes(2)-allTimes(1);
-% delta      = (allTimes(end)-allTimes(1))/length(allTimes); % also possible
+% allTimes   - array of equidistant time values (ideally)
+% timesIn    - sample indices 
+[samplesOut,delta] = deal(zeros(size(timesIn)));
+maxDelta      = max(diff(allTimes)); %because it is not always perfectly equidistant
 for i=1:length(timesIn)
-    [deltat(i),samplesOut(i)] = min(abs(allTimes-timesIn(i)));
+    [delta(i),samplesOut(i)] = min(abs(allTimes-timesIn(i)));
+    if delta(i) > maxDelta
+        error('Time point %g not found in time range [%g, %g] or something is wrong about cfg.times',...
+            timesIn(i),allTimes(1),allTimes(end));
+    end
 end
-if max(deltat) > delta
-    error('Time points %g and %g not found in time range [%g, %g] or something is wrong about cfg.times',...
-        timesIn(1),timesIn(2),allTimes(1),allTimes(end));
-end
-
 end
 
 function peak=peakDetection(cfg,ERP,peakLat)
@@ -758,7 +750,7 @@ peak.amp = mean(ERP(peak.lat-cfg.peakWidth:peak.lat+cfg.peakWidth));
 %with start/end of cutERP
 end
 
-function ampLat=amplitudeLatency(cfg,ERP,percAmp,peakLat,counterLat)
+function ampLat=amplitudeLatency(cfg,ERP,baseline,peakLat,counterLat)
 %ampLat.start: where ERP reaches cfg.percAmp before the peak
 %ampLat.end:   where ERP reaches cfg.percAmp after the peak
 
@@ -795,14 +787,14 @@ time(1)=max(time(1),cfg.peakWidth+1);
 time(2)=min(time(2),length(ERP)-cfg.peakWidth);
 
 
-%first search for early crossing of cfg.percAmp by going backwards from
+%first search for early crossing of baseline by going backwards from
 %peak
 ampLat=struct;
 for sample=peakLat:-1:time(1)+cfg.peakWidth
     %go through the search window and calculate mean area (peakWidth
-    %broad) and each time check whether cfg.percAmp has been reached
+    %broad) and each time check whether baseline has been reached
     currentAmp = mean(ERP(sample-cfg.peakWidth:sample+cfg.peakWidth));
-    if (cfg.sign==1 && currentAmp<=percAmp) || (cfg.sign==-1 && currentAmp>=percAmp)
+    if (cfg.sign==1 && currentAmp<=baseline) || (cfg.sign==-1 && currentAmp>=baseline)
         ampLat.start=sample;
         break;
     end
@@ -812,7 +804,7 @@ end
 %now search for the later crossing of the threshold
 for sample=peakLat:time(2)-cfg.peakWidth
     currentAmp = mean(ERP(sample-cfg.peakWidth:sample+cfg.peakWidth));
-    if (cfg.sign==1 && currentAmp<=percAmp) || (cfg.sign==-1 && currentAmp>=percAmp)
+    if (cfg.sign==1 && currentAmp<=baseline) || (cfg.sign==-1 && currentAmp>=baseline)
         ampLat.end=sample;
         break;
     end
@@ -841,18 +833,15 @@ area = sum(cutERP(cutERP>0))*cfg.sign; % area is negative if the component is ne
 end %end of sub-function totalArea
 
 function areaLat=areaLatency(cfg,ERP,area,baseline,time)
+%time in samples (taken care of by checkConfig)
 cutERP=(ERP(time(1):time(2))-baseline)*cfg.sign; % ERP & area need to be flipped if they are negative
 latidx = find(cumsum(cutERP) >= area * cfg.sign * cfg.percArea);
 if ~isempty(latidx)
-   areaLat.lat = latidx(1) + time(1) -1; % this is just counting samples, what if time was in seconds?
+   areaLat.lat = latidx(1) + time(1) -1;
    areaLat.foundLat=true;
 else
-%  areaLat.lat = NaN;      % or rather removing it from the structure?
-%  if isfield(s,'lat') 
-%     rmfield(s,'lat');
-%  end
-   areaLat.lat = round(mean(time)); % if not latency can be found, than lat is set to the mean?
-   areaLat.foundLat=false;
+    areaLat.lat = NaN;
+    areaLat.foundLat=false;
 end
 end %end of sub-function areaLat
 
