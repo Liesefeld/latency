@@ -96,9 +96,13 @@ function [res,cfgNew] = latency(cfg,avgs,sign)
 %   offset and res.foundOn or res.foundOff is false, respectively
 %
 % Originally created by Heinrich René Liesefeld in September 2014
-% Last modified by Heinrich René Liesefeld in March 2019
+% Last modified by Heinrich René Liesefeld in April 2019
 %
-% Please send bug reports to Heinrich.Liesefeld@psy.lmu.de
+% Many thanks for bug reports and helpful suggestions to
+%   Philipp Ruhnau
+%   Burkhard Maess
+%   Johannes Fahrenfort 
+% Please send further (usability) bug reports to Heinrich.Liesefeld@psy.lmu.de
 
 if isempty(cfg)
     cfg=struct;
