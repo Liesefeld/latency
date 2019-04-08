@@ -534,8 +534,8 @@ end
 
 %check and/or determine cfg.peakWidth
 if isfield(cfg,'peakWidth')
-    samplesOut=round(cfg.peakWidth*cfg.sampRate);
-    cfgNew.peakWidth=samplesOut/cfg.sampRate;
+    cfg.peakWidth=round(cfg.peakWidth*cfg.sampRate);
+    cfgNew.peakWidth=cfg.peakWidth/cfg.sampRate;
     if cfg.warnings && abs(cfgNew.peakWidth-cfg.peakWidth)>tolerance
         warning('Rounded peakWidth (%g %s) to the next possible value: %g %s',...
             cfg.peakWidth,cfg.timeFormat,cfgNew.peakWidth,cfg.timeFormat);
