@@ -3,9 +3,9 @@ function [res,cfgNew] = latency(cfg,avgs,sign)
 % cfg and avgs are mandatory, cfg can be empty if sign is entered as third
 %   argument
 % avgs is a subjects x channels x time array, contains such an array in the 
-%   field 'individual' or 'data' or as specified in cfg.datafield, or
-%   contains a field 'avg' which is a cell array of structures (one
-%   structure for each subject)
+%   field 'individual' (EEGlab) or 'data' (Fieldtrip) or 'bindata' (ERPlab)
+%   or as specified in cfg.datafield,or contains a field 'avg' which is a 
+%   cell array of structures (one structure for each subject)
 % sign can be indicated as cfg.sign or as the third input argument
 %  (argument overrules struct field); it is either 'pos'/1 or 'neg'/-1
 % all timining information is in samples or in the units of cfg.times
@@ -23,8 +23,9 @@ function [res,cfgNew] = latency(cfg,avgs,sign)
 %   chans:       channel included into the average; indices or, if
 %                cfg.chanName is given, channel names(default = all)
 %   chanName:    list of channel names (same order as in avgs)
-%   peakWin:     search window for peak detection [start end]; indices or,
-%                if cfg.times is given, time points(default = full range);
+%   peakWin:     search window for peak detection 'fullRange' (default) or 
+%                [start end];
+%                express as indices or, if cfg.times is given, as time points;
 %                can also be a subjects x 2 matrix for individual search
 %                ranges
 %   meanWin:     time range across which activity is averaged for mean amplitude
@@ -57,6 +58,9 @@ function [res,cfgNew] = latency(cfg,avgs,sign)
 %                'peakWin' or [start end]
 %   cBound:      Boolean that indicats whether the counter peak is one
 %                border for onset/offset
+%   condition:   if ERPlab data is entered, this specifies which condition
+%                shall be analyzed; can also be several conditions across 
+%                which to average
 %                
 % res contains a (latency) measure for each subject (is a struct if 
 %   several measures are requested); latencies are indices or, if cfg.time
@@ -95,13 +99,16 @@ function [res,cfgNew] = latency(cfg,avgs,sign)
 %   the respective border defined by cfg.ampLatWin is selected as on- or
 %   offset and res.foundOn or res.foundOff is false, respectively
 %
-% Originally created by Heinrich René Liesefeld in September 2014
-% Last modified by Heinrich René Liesefeld in April 2019
+% Originally created by Heinrich R. Liesefeld in September 2014
+% Last modified by Heinrich R. Liesefeld in April 2022
+% This function is distributed under the GNU General Public License, v3;
+% see https://github.com/Liesefeld/latency/
 %
 % Many thanks for bug reports and helpful suggestions to
 %   Philipp Ruhnau
 %   Burkhard Maess
 %   Johannes Fahrenfort 
+%   Martin Constant
 % Please send further (usability) bug reports to Heinrich.Liesefeld@psy.lmu.de
 
 if isempty(cfg)
@@ -112,14 +119,26 @@ if exist('sign','var')
     cfg.sign=sign;
 end
 if isstruct(avgs)
-    if isfield(cfg,'datafield')
+    if isfield(cfg,'datafield') %EEGlab
         avgs=avgs.(cfg.datafield);
-    elseif isfield(avgs,'individual')
+    elseif isfield(avgs,'individual') %Fieldtrip
         avgs=avgs.individual;
+    elseif isfield(avgs,'bindata') %ERPlab
+        avgsOld=avgs;
+        nSubs=length(avgs);
+        sizeERP=size(avgs(1).bindata);
+        if sizeERP(3) > 1 && ~isfield(cfg,'condition')
+            warning('ERPlab data with multiple conditions was entered and no condition was specified. I assume this is a collapsed-localizer approach and will average across all conditions.')
+            cfg.condition=1:sizeERP(3);
+        end
+        avgs=nan([nSubs,sizeERP(1),sizeERP(2)]);
+        for subi=1:nSubs
+            avgs(subi,:,:) = mean(avgsOld(subi).bindata(:,:,cfg.condition),3);
+        end
     elseif isfield(avgs,'data')
         avgs=avgs.data;
     else
-        error('avgs must either be a subject x electrode x time array or contain a field "individual" (Fieldtrip) or "data" (EEGlab) or a user-specified field (cfg.datafield), which is such an array.')
+        error('avgs must either be a subject x electrode x time array or contain a field "individual" (Fieldtrip) or "data" (EEGlab) or "bindata" (ERPlab) or a user-specified field (cfg.datafield), which is such an array.')
     end
 elseif iscell(avgs)
     avgsOld=avgs;
@@ -306,7 +325,7 @@ for subi=1:nSubs %cycle through subjects
         if areaLat.foundLat
             comp.areaLat(subi)=cfg.times(areaLat.lat);
         else
-            comp.areaLat(subi)=nan;
+            comp.areaLat(subi)=mean(time); %should set to nan so that the problem becomes more apparent?
             warning('Did not find fractional area latency for subject %g; set latency to average of the time range',subNum);
         end
         comp.foundArea(subi)=areaLat.foundLat;
@@ -353,6 +372,8 @@ for subi=1:nSubs %cycle through subjects
             else
                 title(sprintf('left out subject #%g',subNum));
             end
+        elseif strcmp(cfg.aggregate,'GA')
+            title('Grand Average')
         else
             title(sprintf('subject #%g',subNum));
         end
@@ -390,6 +411,7 @@ end
 if iscell(cfg.extract)
     for outi=1:length(cfg.extract)
         if strcmp(cfg.aggregate,'jackSmulders')
+            res.(cfg.extract{outi})=nan(size(comp.(cfg.extract{outi}))); %to preallocate and have same format
             %oi = n*mean(J) - (n - 1)*ji, see Smulders (2010)
             for subi=1:nSubs
                 res.(cfg.extract{outi})(subi)=nSubs*mean(comp.(cfg.extract{outi}))-(nSubs-1)*comp.(cfg.extract{outi})(subi);
@@ -399,6 +421,7 @@ if iscell(cfg.extract)
         end
     end
 elseif strcmp(cfg.aggregate,'jackSmulders')
+    res=nan(size(comp.(cfg.extract)));
     %oi = n*mean(J) - (n - 1)*ji, see Smulders (2010)
     for subi=1:nSubs
         res(subi)=nSubs*mean(comp.(cfg.extract))-(nSubs-1)*comp.(cfg.extract)(subi);
@@ -456,12 +479,7 @@ elseif isfield(cfg,'chanName') && (iscell(cfg.chans) || ischar(cfg.chans))
     allChans=1:length(cfg.chanName);
     cfg.chans=allChans(ismember(cfg.chanName,cfg.chans));    
 end
-if ~isfield(cfg,'peakWin')
-    if cfg.warnings
-        warning('No time range (cfg.peakWin) indicated; will use full time range.');
-    end
-    cfg.peakWin=[1,size(avgs,3)];
-end
+
 
 if isfield(cfg,'times')
     %determine format of time
@@ -475,7 +493,14 @@ if isfield(cfg,'times')
             fprintf('All times are interpreted as seconds; set cfg.timeFormat=''ms'' if this is incorrect.\n')            
         end
     end
-    
+    switch cfg.timeFormat
+        %deviations in sub-microsecond range do not matter
+        case 'ms'
+            tolerance=1e-3;
+        case 's'
+            tolerance=1e-6;
+    end
+
     %check cfg.times for consistency
     if length(cfg.times)==1
         error('cfg.times must include at least two values (start and end times).')
@@ -492,13 +517,6 @@ if isfield(cfg,'times')
     end
     if any(diff(cfg.times)-mean(diff(cfg.times))~=0)
         %non-constant sampling rate
-        switch cfg.timeFormat
-            %deviations in sub-microsecond range do not matter
-            case 'ms'
-                tolerance=1e-3;
-            case 's'
-                tolerance=1e-6;
-        end
         if all(abs(diff(cfg.times)-mean(diff(cfg.times)))<tolerance)
             cfg.times=round(cfg.times/tolerance)*tolerance;
             if cfg.warnings
@@ -510,17 +528,31 @@ if isfield(cfg,'times')
     end
     
     %determine sampling rate
-    if isfield(cfg,'sampRate') && cfg.warnings
-        warning('Sampling rate is now calculated from the data; cfg.sampRate is ignored.');
+    sampRate=1/mean(diff(cfg.times));
+    if isfield(cfg,'sampRate') && sampRate~=cfg.sampRate
+        if cfg.warnings
+            warning('Indicated sampling rate (%g samples/%s) and that calculated from the data (%g samples/%s) do not match; I''ll use the latter.',cfg.sampRate,cfg.timeFormat,sampRate,cfg.timeFormat);
+        end
     end
-    cfg.sampRate=1/mean(diff(cfg.times));
-    fprintf('Calculated sampling rate: %g samples/%s\n',cfg.sampRate,cfg.timeFormat);
+    cfg.sampRate=sampRate;
 else
     fprintf('All times are interpreted as sampling points; fill cfg.times to change this.\n')
     cfg.timeFormat = 'samples';
     cfg.times=1:size(avgs,3);
     cfg.sampRate=1;
-    tolerance=0;
+    tolerance=0; %overwrites above-determined tolerance, because it is not needed
+end
+
+if ~isfield(cfg,'peakWin') || strcmp('fullRange',cfg.peakWin)
+%     if cfg.warnings
+%         warning('No time range (cfg.peakWin) indicated; will use full time range.');
+%     end
+    if min(cfg.times) < 0 && max(cfg.times) > 0 
+        %if we know where the relevant event is, start analysis window there
+        cfg.peakWin=[0,cfg.times(end)];
+    else
+        cfg.peakWin=[cfg.times(1),cfg.times(end)];
+    end
 end
 
 if ~isfield(cfg,'meanWin')
@@ -534,12 +566,13 @@ end
 
 %check and/or determine cfg.peakWidth
 if isfield(cfg,'peakWidth')
-    cfg.peakWidth=round(cfg.peakWidth*cfg.sampRate);
-    cfgNew.peakWidth=cfg.peakWidth/cfg.sampRate;
+    samplesOut=round(cfg.peakWidth*cfg.sampRate);
+    cfgNew.peakWidth=samplesOut/cfg.sampRate;
     if cfg.warnings && abs(cfgNew.peakWidth-cfg.peakWidth)>tolerance
         warning('Rounded peakWidth (%g %s) to the next possible value: %g %s',...
             cfg.peakWidth,cfg.timeFormat,cfgNew.peakWidth,cfg.timeFormat);
     end
+    cfg.peakWidth=samplesOut;
 else
     %set default peak width: ~5ms or 5 samples
     switch cfg.timeFormat
@@ -620,7 +653,11 @@ else
 end
 
 %check cfg.extract (requested output measures)
-extractable={'peakLat','onset','offset','areaLat','mean','peakAmp','area','width','peak2peak','baseline'};
+if isfield(cfg,'cWin')
+    extractable={'peakLat','onset','offset','areaLat','mean','peakAmp','area','width','peak2peak','baseline'};
+else
+    extractable={'peakLat','onset','offset','areaLat','mean','peakAmp','area','width','baseline'};
+end
 if ~isfield(cfg,'extract')
     cfg.extract=extractable;
     if cfg.warnings
@@ -691,6 +728,9 @@ if ~isfield(cfg,'aggregate')
         cfg.aggregate='individual';
     end
 end
+if (isfield(cfg,'cWinStart') || isfield (cfg,'cWin')) && ~isfield(cfg,'cWinWidth')
+    warning('Counter peak requires the field ''cWinWidth''; ''cWinStart'' and ''cWin'' are ignored');
+end
 if isfield(cfg,'cWinWidth')
     if ~isfield(cfg,'cWinStart')
         cfg.cWinStart='peakWin';
@@ -725,11 +765,17 @@ if isnumeric(cfg.areaBase) && cfg.areaBase==0
     cfg.areaBase='zero';
 end
 
-
-if cfg.sign==1
-    direction='posi';
-elseif cfg.sign==-1
-    direction='nega';
+switch cfg.sign
+    case 1
+        direction='posi';
+    case 'posi'
+        direction='posi';
+        cfg.sign=1;
+    case -1
+        direction='nega';
+    case 'nega'
+        direction='nega';
+        cfg.sign=-1;
 end
 
 
